@@ -1,0 +1,31 @@
+[package]
+name = "brightsky"
+version = "0.1.0"
+edition = "2024"
+authors = ["Florentin Eckl <ecklf@icloud.com>"]
+description = "A Rust client library for the Bright Sky weather API"
+homepage = "https://github.com/ecklf/brightsky-rs"
+repository = "https://github.com/ecklf/brightsky-rs"
+readme = "README.md"
+license-file = "LICENSE"
+keywords = ["weather", "api", "client", "brightsky", "meteorology"]
+categories = ["api-bindings", "web-programming", "science"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+reqwest = { version = "0.12", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2.0"
+flate2 = "1.1"
+url = "2"
+base64 = "0.22"
+anyhow = "1.0"
+
+[dev-dependencies]
+tokio-test = "0.4"
+wiremock = "0.6"
+
+[features]
+default = []
