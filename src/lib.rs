@@ -11,6 +11,7 @@
 //! - **Radar Data**: Retrieve high-resolution rainfall radar with 1km spatial and 5-minute temporal resolution
 //! - **Weather Alerts**: Access official weather warnings and alerts from DWD
 //! - **No API Key Required**: The public instance at `https://api.brightsky.dev/` is free to use
+//! - **Embedded Support**: Works in no_std environments with the `reqwless-client` feature
 //!
 //! ## Geographical Coverage
 //!
@@ -18,9 +19,9 @@
 //! However, forecasts cover the whole world, albeit at much lower density outside of Germany.
 //! Historical data is available going back to January 1st, 2010.
 //!
-//! ## Quick Start
+//! ## Quick Start (std with reqwest)
 //!
-//! ```rust
+//! ```rust,no_run
 //! use brightsky::{BrightSkyClient, CurrentWeatherQueryBuilder, WeatherQueryBuilder, types::{CurrentWeatherResponse, WeatherResponse}};
 //! use chrono::NaiveDate;
 //!
@@ -36,18 +37,36 @@
 //!     let current_weather = client.get::<CurrentWeatherResponse>(current_query).await?;
 //!     println!("Current temperature: {:?}°C", current_weather.weather.temperature);
 //!
-//!     // Get weather forecast
-//!     let weather_query = WeatherQueryBuilder::new()
-//!         .with_lat_lon((52.52, 13.4))
-//!         .with_date(NaiveDate::from_ymd_opt(2023, 8, 7).unwrap())
-//!         .build()?;
-//!
-//!     let weather = client.get::<WeatherResponse>(weather_query).await?;
-//!     println!("Found {} weather records", weather.weather.len());
-//!
 //!     Ok(())
 //! }
 //! ```
+//!
+//! ## Embedded Usage (no_std with reqwless)
+//!
+//! ```ignore
+//! use brightsky::{BrightSkyClient, CurrentWeatherQueryBuilder};
+//! use brightsky::http::{ReqwlessClient, ReqwlessConfig};
+//!
+//! // With embassy-net stack
+//! let tcp = TcpClient::new(stack, &tcp_state);
+//! let dns = DnsSocket::new(stack);
+//!
+//! let http_client = ReqwlessClient::new(&tcp, &dns, ReqwlessConfig::default());
+//! let client = BrightSkyClient::with_http_client(http_client);
+//!
+//! let query = CurrentWeatherQueryBuilder::new()
+//!     .with_lat_lon((52.52, 13.4))
+//!     .build()?;
+//!
+//! let weather: CurrentWeatherResponse = client.get(query).await?;
+//! ```
+//!
+//! ## Feature Flags
+//!
+//! - `std` (default): Enable std library support
+//! - `reqwest-client` (default): Use reqwest HTTP client (requires std)
+//! - `reqwless-client`: Use reqwless HTTP client for embedded/no_std
+//! - `embedded-tls`: Enable TLS support for reqwless
 //!
 //! ## Data Sources
 //!
@@ -62,10 +81,20 @@
 //! Please note that the [DWD's Terms of Use](https://www.dwd.de/EN/service/copyright/copyright_artikel.html)
 //! apply to all data retrieved through this API.
 
+#![cfg_attr(not(feature = "std"), no_std)]
+
+#[cfg(not(feature = "std"))]
+extern crate alloc;
+
+#[cfg(not(feature = "std"))]
+use alloc::string::String;
+
 use serde::de::DeserializeOwned;
-use serde_json::Value;
+
+#[cfg(feature = "std")]
 use url::Url;
 
+pub mod http;
 pub mod types;
 
 mod weather;
@@ -83,17 +112,25 @@ pub use alerts::AlertsQueryBuilder;
 mod errors;
 pub use errors::*;
 
+// Re-export HTTP client types for convenience
+#[cfg(feature = "reqwest-client")]
+pub use http::ReqwestClient;
+#[cfg(feature = "reqwless-client")]
+pub use http::{DEFAULT_BUFFER_SIZE, ReqwlessConfig, reqwless_get};
+pub use http::{HttpClient, HttpClientError, HttpResponse};
+
 /// Base URL for the Bright Sky API
 const BRIGHT_SKY_API: &str = "https://api.brightsky.dev";
 
 /// HTTP client for making requests to the Bright Sky API.
 ///
-/// The client handles authentication (none required), request formatting,
-/// and response deserialization for all Bright Sky API endpoints.
+/// The client handles request formatting and response deserialization
+/// for all Bright Sky API endpoints. It is generic over the HTTP backend,
+/// allowing it to work in both std and no_std environments.
 ///
-/// ## Examples
+/// ## Examples (std with reqwest - default)
 ///
-/// ```rust
+/// ```rust,no_run
 /// use brightsky::{BrightSkyClient, CurrentWeatherQueryBuilder, types::CurrentWeatherResponse};
 ///
 /// #[tokio::main]
@@ -109,9 +146,19 @@ const BRIGHT_SKY_API: &str = "https://api.brightsky.dev";
 ///     Ok(())
 /// }
 /// ```
-pub struct BrightSkyClient {
+///
+/// ## Examples (embedded with reqwless)
+///
+/// ```ignore
+/// use brightsky::{BrightSkyClient, CurrentWeatherQueryBuilder};
+/// use brightsky::http::{ReqwlessClient, ReqwlessConfig};
+///
+/// let http_client = ReqwlessClient::new(&tcp, &dns, ReqwlessConfig::default());
+/// let client = BrightSkyClient::with_http_client(http_client);
+/// ```
+pub struct BrightSkyClient<C: HttpClient> {
     host: &'static str,
-    client: reqwest::Client,
+    client: C,
 }
 
 /// Trait for converting query builders into Bright Sky API URLs.
@@ -127,21 +174,24 @@ pub trait ToBrightSkyClientUrl {
     ///
     /// # Errors
     ///
-    /// Returns `BlindSkyClientError` if URL construction fails due to:
+    /// Returns `BrightSkyError` if URL construction fails due to:
     /// - Invalid parameter values
     /// - URL parsing errors
     /// - Missing required parameters
-    fn to_url(self, host: &str) -> Result<Url, BlindSkyClientError>;
+    #[cfg(feature = "std")]
+    fn to_url(self, host: &str) -> Result<Url, BrightSkyError>;
+
+    /// Convert the query builder into a URL string for the Bright Sky API.
+    ///
+    /// This is the no_std compatible version that returns a String instead of Url.
+    #[cfg(not(feature = "std"))]
+    fn to_url_string(self, host: &str) -> Result<String, BrightSkyError>;
 }
 
-impl Default for BrightSkyClient {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl BrightSkyClient {
-    /// Create a new Bright Sky API client.
+// Default implementation using reqwest
+#[cfg(feature = "reqwest-client")]
+impl BrightSkyClient<http::ReqwestClient> {
+    /// Create a new Bright Sky API client with the default reqwest backend.
     ///
     /// Uses the default public API endpoint at `https://api.brightsky.dev`.
     /// No API key is required.
@@ -154,10 +204,54 @@ impl BrightSkyClient {
     /// let client = BrightSkyClient::new();
     /// ```
     pub fn new() -> Self {
+        Self::with_http_client(http::ReqwestClient::new())
+    }
+}
+
+#[cfg(feature = "reqwest-client")]
+impl Default for BrightSkyClient<http::ReqwestClient> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<C: HttpClient> BrightSkyClient<C> {
+    /// Create a new Bright Sky API client with a custom HTTP client.
+    ///
+    /// This allows you to use any HTTP client that implements the `HttpClient` trait,
+    /// including the reqwless client for embedded environments.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// use brightsky::BrightSkyClient;
+    /// use brightsky::http::{ReqwlessClient, ReqwlessConfig};
+    ///
+    /// let http_client = ReqwlessClient::new(&tcp, &dns, ReqwlessConfig::default());
+    /// let client = BrightSkyClient::with_http_client(http_client);
+    /// ```
+    pub fn with_http_client(client: C) -> Self {
         BrightSkyClient {
             host: BRIGHT_SKY_API,
-            client: reqwest::Client::new(),
+            client,
         }
+    }
+
+    /// Create a new client with a custom host URL.
+    ///
+    /// Useful for testing with mock servers or self-hosted instances.
+    pub fn with_host(client: C, host: &'static str) -> Self {
+        BrightSkyClient { host, client }
+    }
+
+    /// Get a reference to the underlying HTTP client.
+    pub fn http_client(&self) -> &C {
+        &self.client
+    }
+
+    /// Get the configured host URL.
+    pub fn host(&self) -> &str {
+        self.host
     }
 
     /// Send a GET request to the Bright Sky API and deserialize the response.
@@ -179,7 +273,7 @@ impl BrightSkyClient {
     ///
     /// # Errors
     ///
-    /// Returns `BlindSkyClientError` for:
+    /// Returns `BrightSkyError` for:
     /// - Network errors
     /// - HTTP error status codes
     /// - JSON deserialization failures
@@ -187,7 +281,7 @@ impl BrightSkyClient {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use brightsky::{BrightSkyClient, CurrentWeatherQueryBuilder, types::CurrentWeatherResponse};
     ///
     /// #[tokio::main]
@@ -202,41 +296,74 @@ impl BrightSkyClient {
     ///     Ok(())
     /// }
     /// ```
+    #[cfg(feature = "std")]
     pub async fn get<R: DeserializeOwned>(
         &self,
         builder: impl ToBrightSkyClientUrl,
-    ) -> Result<R, BlindSkyClientError> {
+    ) -> Result<R, BrightSkyError> {
         let url = builder.to_url(self.host)?;
-        let res = self.client.get(url.as_ref()).send().await?;
-        if res.status().is_success() {
-            let text = res.text().await?;
+        let response = self
+            .client
+            .get(url.as_ref())
+            .await
+            .map_err(BrightSkyError::from)?;
 
-            #[cfg(debug_assertions)]
-            {
-                dbg!("Response Text: {}", &text);
-                let json2: Value =
-                    serde_json::from_str(&text).map_err(BlindSkyClientError::SerdeError)?;
-                dbg!("Response JSON: {:?}", &json2);
-            }
-
-            let json: R = serde_json::from_str(&text).map_err(BlindSkyClientError::SerdeError)?;
-
-            Ok(json)
-        } else {
-            let err = res
-                .error_for_status()
-                .map_err(BlindSkyClientError::ReqwestError)
-                .unwrap_err();
-            Err(err)
+        if !response.is_success() {
+            return Err(BrightSkyError::HttpError(HttpErrorKind::Status {
+                code: response.status,
+            }));
         }
+
+        #[cfg(debug_assertions)]
+        {
+            if let Ok(text) = core::str::from_utf8(&response.body) {
+                eprintln!("Response Text: {}", text);
+            }
+        }
+
+        let json: R = serde_json::from_slice(&response.body).map_err(BrightSkyError::SerdeError)?;
+
+        Ok(json)
+    }
+
+    /// Send a GET request to the Bright Sky API (no_std version).
+    #[cfg(not(feature = "std"))]
+    pub async fn get<R: DeserializeOwned>(
+        &self,
+        builder: impl ToBrightSkyClientUrl,
+    ) -> Result<R, BrightSkyError> {
+        let url = builder.to_url_string(self.host)?;
+        let response = self
+            .client
+            .get(&url)
+            .await
+            .map_err(|_e| BrightSkyError::HttpError(HttpErrorKind::Connection))?;
+
+        if !response.is_success() {
+            return Err(BrightSkyError::HttpError(HttpErrorKind::Status {
+                code: response.status,
+            }));
+        }
+
+        let json: R = serde_json::from_slice(&response.body).map_err(BrightSkyError::SerdeError)?;
+
+        Ok(json)
     }
 }
 
-#[cfg(test)]
+// Legacy type alias for backwards compatibility
+#[cfg(feature = "reqwest-client")]
+#[deprecated(since = "0.2.0", note = "Use BrightSkyClient<ReqwestClient> instead")]
+pub type LegacyBrightSkyClient = BrightSkyClient<http::ReqwestClient>;
+
+// Also keep BlindSkyClientError as deprecated alias
+#[deprecated(since = "0.2.0", note = "Use BrightSkyError instead")]
+pub type BlindSkyClientError = BrightSkyError;
+
+#[cfg(all(test, feature = "reqwest-client"))]
 mod tests {
     use super::*;
     use chrono::NaiveDate;
-
 
     #[tokio::test]
     async fn test_brightsky_client_creation() {
@@ -270,7 +397,7 @@ mod tests {
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            BlindSkyClientError::InvalidLongitude(_) => (),
+            BrightSkyError::InvalidLongitude(_) => (),
             _ => panic!("Expected InvalidLongitude error"),
         }
     }
@@ -283,7 +410,7 @@ mod tests {
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            BlindSkyClientError::InvalidLongitude(_) => (),
+            BrightSkyError::InvalidLongitude(_) => (),
             _ => panic!("Expected InvalidLongitude error"),
         }
     }
@@ -309,7 +436,7 @@ mod tests {
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            BlindSkyClientError::InvalidMaxDistance(_) => (),
+            BrightSkyError::InvalidMaxDistance(_) => (),
             _ => panic!("Expected InvalidMaxDistance error"),
         }
     }
@@ -335,7 +462,10 @@ mod tests {
 
         assert!(query.is_ok());
         let query = query.unwrap();
-        assert_eq!(query.source_id, Some(vec!["1234".to_string(), "5678".to_string()]));
+        assert_eq!(
+            query.source_id,
+            Some(vec!["1234".to_string(), "5678".to_string()])
+        );
     }
 
     #[tokio::test]
@@ -385,7 +515,7 @@ mod tests {
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            BlindSkyClientError::DateNotSet => (),
+            BrightSkyError::DateNotSet => (),
             _ => panic!("Expected DateNotSet error"),
         }
     }
@@ -394,7 +524,7 @@ mod tests {
     async fn test_weather_query_with_date_range() {
         let start_date = NaiveDate::from_ymd_opt(2023, 8, 7).unwrap();
         let end_date = NaiveDate::from_ymd_opt(2023, 8, 10).unwrap();
-        
+
         let query = WeatherQueryBuilder::new()
             .with_date(start_date)
             .with_last_date(end_date)
@@ -443,7 +573,10 @@ mod tests {
 
         assert!(query.is_ok());
         let query = query.unwrap();
-        assert_eq!(query.source_id, Some(vec!["1234".to_string(), "5678".to_string()]));
+        assert_eq!(
+            query.source_id,
+            Some(vec!["1234".to_string(), "5678".to_string()])
+        );
     }
 
     #[tokio::test]
@@ -467,12 +600,14 @@ mod tests {
             .unwrap();
 
         let url = query.to_url("https://api.brightsky.dev").unwrap();
-        
+
         assert_eq!(url.path(), "/current_weather");
         assert!(url.query().unwrap().contains("lat=52.52"));
         assert!(url.query().unwrap().contains("lon=13.4"));
         assert!(url.query().unwrap().contains("max_dist=10000"));
-        assert!(url.query().unwrap().contains("tz=Europe") && url.query().unwrap().contains("Berlin"));
+        assert!(
+            url.query().unwrap().contains("tz=Europe") && url.query().unwrap().contains("Berlin")
+        );
     }
 
     #[tokio::test]
@@ -486,7 +621,7 @@ mod tests {
             .unwrap();
 
         let url = query.to_url("https://api.brightsky.dev").unwrap();
-        
+
         assert_eq!(url.path(), "/weather");
         assert!(url.query().unwrap().contains("date=2023-08-07"));
         assert!(url.query().unwrap().contains("lat=52.52"));
@@ -503,7 +638,7 @@ mod tests {
 
         let url = query.to_url("https://api.brightsky.dev").unwrap();
         let query_str = url.query().unwrap();
-        
+
         assert!(query_str.contains("dwd_station_id=01766"));
         assert!(query_str.contains("dwd_station_id=00420"));
     }

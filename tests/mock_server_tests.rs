@@ -484,4 +484,3 @@ async fn test_multiple_station_ids_in_request() {
 
     assert_eq!(response.status(), 200);
 }
-

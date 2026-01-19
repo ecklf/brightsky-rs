@@ -53,13 +53,13 @@
 //! ### Get weather forecast
 //! ```rust
 //! use brightsky::{BrightSkyClient, WeatherQueryBuilder, types::WeatherResponse};
-//! use chrono::NaiveDate;
+//! use chrono::{NaiveDate, Utc};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     let client = BrightSkyClient::new();
 //!
-//!     let tomorrow = chrono::Utc::now().date_naive() + chrono::Duration::days(1);
+//!     let tomorrow = Utc::now().date_naive() + chrono::Duration::days(1);
 //!
 //!     let query = WeatherQueryBuilder::new()
 //!         .with_date(tomorrow)

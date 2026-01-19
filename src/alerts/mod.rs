@@ -31,7 +31,7 @@
 //! ## Usage Examples
 //!
 //! ### Get all current alerts
-//! ```rust,no_run
+//! ```rust
 //! use brightsky::{BrightSkyClient, AlertsQueryBuilder, types::AlertsResponse};
 //!
 //! #[tokio::main]
