@@ -43,30 +43,33 @@
 //!
 //! ## Embedded Usage (no_std with reqwless)
 //!
+//! For embedded systems, brightsky provides query builders and response types.
+//! You handle HTTP yourself with reqwless or any other HTTP client:
+//!
 //! ```ignore
-//! use brightsky::{BrightSkyClient, CurrentWeatherQueryBuilder};
-//! use brightsky::http::{ReqwlessClient, ReqwlessConfig};
+//! use brightsky::{CurrentWeatherQueryBuilder, ToBrightSkyClientUrl, types::CurrentWeatherResponse};
+//! use reqwless::client::{HttpClient, TlsConfig, TlsVerify};
+//! use reqwless::request::Method;
 //!
-//! // With embassy-net stack
-//! let tcp = TcpClient::new(stack, &tcp_state);
-//! let dns = DnsSocket::new(stack);
-//!
-//! let http_client = ReqwlessClient::new(&tcp, &dns, ReqwlessConfig::default());
-//! let client = BrightSkyClient::with_http_client(http_client);
-//!
+//! // Build the URL using brightsky's query builder
 //! let query = CurrentWeatherQueryBuilder::new()
 //!     .with_lat_lon((52.52, 13.4))
 //!     .build()?;
+//! let url = query.to_url_string("https://api.brightsky.dev")?;
 //!
-//! let weather: CurrentWeatherResponse = client.get(query).await?;
+//! // Make request with your own HTTP client
+//! let mut request = http_client.request(Method::GET, &url).await?;
+//! let response = request.send(&mut rx_buffer).await?;
+//! let body = response.body().read_to_end().await?;
+//!
+//! // Deserialize using brightsky's types  
+//! let weather: CurrentWeatherResponse = serde_json::from_slice(body)?;
 //! ```
 //!
 //! ## Feature Flags
 //!
 //! - `std` (default): Enable std library support
 //! - `reqwest-client` (default): Use reqwest HTTP client (requires std)
-//! - `reqwless-client`: Use reqwless HTTP client for embedded/no_std
-//! - `embedded-tls`: Enable TLS support for reqwless
 //!
 //! ## Data Sources
 //!
@@ -89,6 +92,7 @@ extern crate alloc;
 #[cfg(not(feature = "std"))]
 use alloc::string::String;
 
+#[cfg(feature = "std")]
 use serde::de::DeserializeOwned;
 
 #[cfg(feature = "std")]
@@ -115,11 +119,11 @@ pub use errors::*;
 // Re-export HTTP client types for convenience
 #[cfg(feature = "reqwest-client")]
 pub use http::ReqwestClient;
-#[cfg(feature = "reqwless-client")]
-pub use http::{DEFAULT_BUFFER_SIZE, ReqwlessConfig, reqwless_get};
+#[cfg(feature = "std")]
 pub use http::{HttpClient, HttpClientError, HttpResponse};
 
 /// Base URL for the Bright Sky API
+#[cfg(feature = "std")]
 const BRIGHT_SKY_API: &str = "https://api.brightsky.dev";
 
 /// HTTP client for making requests to the Bright Sky API.
@@ -149,13 +153,18 @@ const BRIGHT_SKY_API: &str = "https://api.brightsky.dev";
 ///
 /// ## Examples (embedded with reqwless)
 ///
-/// ```ignore
-/// use brightsky::{BrightSkyClient, CurrentWeatherQueryBuilder};
-/// use brightsky::http::{ReqwlessClient, ReqwlessConfig};
+/// For embedded systems, use the query builders and response types directly:
 ///
-/// let http_client = ReqwlessClient::new(&tcp, &dns, ReqwlessConfig::default());
-/// let client = BrightSkyClient::with_http_client(http_client);
+/// ```ignore
+/// use brightsky::{CurrentWeatherQueryBuilder, ToBrightSkyClientUrl, types::CurrentWeatherResponse};
+///
+/// let query = CurrentWeatherQueryBuilder::new()
+///     .with_lat_lon((52.52, 13.4))
+///     .build()?;
+/// let url = query.to_url_string("https://api.brightsky.dev")?;
+/// // Then use your HTTP client to fetch and serde_json to deserialize
 /// ```
+#[cfg(feature = "std")]
 pub struct BrightSkyClient<C: HttpClient> {
     host: &'static str,
     client: C,
@@ -184,12 +193,12 @@ pub trait ToBrightSkyClientUrl {
     /// Convert the query builder into a URL string for the Bright Sky API.
     ///
     /// This is the no_std compatible version that returns a String instead of Url.
-    #[cfg(not(feature = "std"))]
+    /// Also available in std environments for convenience.
     fn to_url_string(self, host: &str) -> Result<String, BrightSkyError>;
 }
 
 // Default implementation using reqwest
-#[cfg(feature = "reqwest-client")]
+#[cfg(all(feature = "std", feature = "reqwest-client"))]
 impl BrightSkyClient<http::ReqwestClient> {
     /// Create a new Bright Sky API client with the default reqwest backend.
     ///
@@ -208,26 +217,26 @@ impl BrightSkyClient<http::ReqwestClient> {
     }
 }
 
-#[cfg(feature = "reqwest-client")]
+#[cfg(all(feature = "std", feature = "reqwest-client"))]
 impl Default for BrightSkyClient<http::ReqwestClient> {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(feature = "std")]
 impl<C: HttpClient> BrightSkyClient<C> {
     /// Create a new Bright Sky API client with a custom HTTP client.
     ///
-    /// This allows you to use any HTTP client that implements the `HttpClient` trait,
-    /// including the reqwless client for embedded environments.
+    /// This allows you to use any HTTP client that implements the `HttpClient` trait.
     ///
     /// # Examples
     ///
     /// ```ignore
     /// use brightsky::BrightSkyClient;
-    /// use brightsky::http::{ReqwlessClient, ReqwlessConfig};
+    /// use brightsky::http::ReqwestClient;
     ///
-    /// let http_client = ReqwlessClient::new(&tcp, &dns, ReqwlessConfig::default());
+    /// let http_client = ReqwestClient::new();
     /// let client = BrightSkyClient::with_http_client(http_client);
     /// ```
     pub fn with_http_client(client: C) -> Self {
@@ -296,7 +305,6 @@ impl<C: HttpClient> BrightSkyClient<C> {
     ///     Ok(())
     /// }
     /// ```
-    #[cfg(feature = "std")]
     pub async fn get<R: DeserializeOwned>(
         &self,
         builder: impl ToBrightSkyClientUrl,
@@ -319,30 +327,6 @@ impl<C: HttpClient> BrightSkyClient<C> {
             if let Ok(text) = core::str::from_utf8(&response.body) {
                 eprintln!("Response Text: {}", text);
             }
-        }
-
-        let json: R = serde_json::from_slice(&response.body).map_err(BrightSkyError::SerdeError)?;
-
-        Ok(json)
-    }
-
-    /// Send a GET request to the Bright Sky API (no_std version).
-    #[cfg(not(feature = "std"))]
-    pub async fn get<R: DeserializeOwned>(
-        &self,
-        builder: impl ToBrightSkyClientUrl,
-    ) -> Result<R, BrightSkyError> {
-        let url = builder.to_url_string(self.host)?;
-        let response = self
-            .client
-            .get(&url)
-            .await
-            .map_err(|_e| BrightSkyError::HttpError(HttpErrorKind::Connection))?;
-
-        if !response.is_success() {
-            return Err(BrightSkyError::HttpError(HttpErrorKind::Status {
-                code: response.status,
-            }));
         }
 
         let json: R = serde_json::from_slice(&response.body).map_err(BrightSkyError::SerdeError)?;

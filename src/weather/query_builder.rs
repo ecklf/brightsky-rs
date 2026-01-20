@@ -461,10 +461,14 @@ impl<'a> ToBrightSkyClientUrl for WeatherQueryBuilder<'a> {
         Ok(url)
     }
 
-    #[cfg(not(feature = "std"))]
     fn to_url_string(self, host: &str) -> Result<String, BrightSkyError> {
+        #[cfg(not(feature = "std"))]
+        use alloc::vec::Vec;
+        #[cfg(feature = "std")]
+        use std::vec::Vec;
+
         let mut url = format!("{}/weather", host.trim_end_matches('/'));
-        let mut params = alloc::vec::Vec::new();
+        let mut params = Vec::new();
 
         if let Some(date) = self.date {
             params.push(format!("date={}", date));

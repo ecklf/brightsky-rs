@@ -53,10 +53,8 @@ pub enum HttpErrorKind {
     /// Other/unknown error.
     #[cfg(feature = "reqwest-client")]
     Reqwest(reqwest::Error),
-    #[cfg(feature = "reqwless-client")]
-    Reqwless(reqwless::Error),
     /// Generic error for when no specific backend is available.
-    #[cfg(not(any(feature = "reqwest-client", feature = "reqwless-client")))]
+    #[cfg(not(feature = "reqwest-client"))]
     Other,
 }
 
@@ -143,17 +141,7 @@ impl From<reqwest::Error> for BrightSkyError {
     }
 }
 
-#[cfg(feature = "reqwless-client")]
-impl From<reqwless::Error> for BrightSkyError {
-    fn from(err: reqwless::Error) -> Self {
-        match err {
-            reqwless::Error::Network(_) => Self::HttpError(HttpErrorKind::Connection),
-            reqwless::Error::Dns => Self::HttpError(HttpErrorKind::Connection),
-            reqwless::Error::InvalidUrl(_) => Self::HttpError(HttpErrorKind::InvalidUrl),
-            _ => Self::HttpError(HttpErrorKind::Reqwless(err)),
-        }
-    }
-}
+
 
 #[cfg(feature = "std")]
 impl From<HttpClientError> for BrightSkyError {
@@ -170,10 +158,7 @@ impl From<HttpClientError> for BrightSkyError {
                 crate::http::HttpRequestError::Reqwest(e) => {
                     Self::HttpError(HttpErrorKind::Reqwest(e))
                 }
-                #[cfg(feature = "reqwless-client")]
-                crate::http::HttpRequestError::Reqwless(e) => {
-                    Self::HttpError(HttpErrorKind::Reqwless(e))
-                }
+                #[allow(unreachable_patterns)]
                 _ => Self::HttpError(HttpErrorKind::Connection),
             },
             HttpClientError::Other => Self::HttpError(HttpErrorKind::Connection),

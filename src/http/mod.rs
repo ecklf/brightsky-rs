@@ -1,15 +1,11 @@
 //! HTTP client abstraction for pluggable backends.
 //!
-//! This module provides a trait-based abstraction over HTTP clients, allowing
-//! the library to work with different backends:
-//!
-//! - **reqwest** (default): Full-featured HTTP client for std environments
-//! - **reqwless**: Lightweight HTTP client for embedded/no_std environments
+//! This module provides a trait-based abstraction over HTTP clients.
 //!
 //! # Feature Flags
 //!
 //! - `reqwest-client` (default): Enables the reqwest backend (requires std)
-//! - `reqwless-client`: Enables the reqwless backend for embedded systems
+//! - `reqwless-client`: Enables types for embedded systems (no HTTP client, just types)
 //!
 //! # Example with reqwest (default)
 //!
@@ -21,24 +17,32 @@
 //!
 //! # Example with reqwless (embedded)
 //!
-//! ```ignore
-//! use brightsky::http::{ReqwlessClient, ReqwlessConfig};
-//! use brightsky::BrightSkyClient;
+//! For embedded systems, brightsky provides query builders and response types.
+//! You handle HTTP yourself with reqwless:
 //!
-//! // tcp and dns implement embedded-nal-async traits
-//! let http_client = ReqwlessClient::new(tcp, dns, ReqwlessConfig::default());
-//! let client = BrightSkyClient::with_http_client(http_client);
+//! ```ignore
+//! use brightsky::{CurrentWeatherQueryBuilder, ToBrightSkyClientUrl, types::CurrentWeatherResponse};
+//! use reqwless::client::{HttpClient, TlsConfig, TlsVerify};
+//!
+//! // Build the URL using brightsky's query builder
+//! let url = CurrentWeatherQueryBuilder::new()
+//!     .with_lat_lon((52.52, 13.4))
+//!     .build()?
+//!     .to_url_string("https://api.brightsky.dev")?;
+//!
+//! // Make request with your own HTTP client
+//! let mut request = http_client.request(Method::GET, &url).await?;
+//! let response = request.send(&mut rx_buffer).await?;
+//! let body = response.body().read_to_end().await?;
+//!
+//! // Deserialize using brightsky's types
+//! let weather: CurrentWeatherResponse = serde_json::from_slice(body)?;
 //! ```
 
 #[cfg(feature = "reqwest-client")]
 mod reqwest_client;
 #[cfg(feature = "reqwest-client")]
 pub use reqwest_client::*;
-
-#[cfg(feature = "reqwless-client")]
-mod reqwless_client;
-#[cfg(feature = "reqwless-client")]
-pub use reqwless_client::{DEFAULT_BUFFER_SIZE, ReqwlessConfig, reqwless_get};
 
 #[cfg(feature = "std")]
 use std::vec::Vec;
@@ -108,8 +112,6 @@ pub enum HttpClientError {
 pub enum HttpRequestError {
     #[cfg(feature = "reqwest-client")]
     Reqwest(reqwest::Error),
-    #[cfg(feature = "reqwless-client")]
-    Reqwless(reqwless::Error),
     /// Generic error for custom implementations
     Custom,
 }
@@ -143,6 +145,7 @@ impl std::error::Error for HttpClientError {}
 /// - Handle HTTPS connections (the Bright Sky API uses HTTPS)
 /// - Return the full response body as bytes
 /// - Map backend-specific errors to `HttpClientError`
+#[cfg(feature = "std")]
 pub trait HttpClient {
     /// Perform a GET request to the given URL.
     ///
