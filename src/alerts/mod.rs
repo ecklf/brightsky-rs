@@ -31,20 +31,19 @@
 //! ## Usage Examples
 //!
 //! ### Get all current alerts
-//! ```rust
-//! use brightsky::{BrightSkyClient, AlertsQueryBuilder, types::AlertsResponse};
+//! ```rust,no_run
+//! use brightsky::{AlertsQueryBuilder, ToBrightSkyUrl, BRIGHT_SKY_API, types::AlertsResponse};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let client = BrightSkyClient::new();
-//!
 //!     let query = AlertsQueryBuilder::new().build()?;
-//!     let response = client.get::<AlertsResponse>(query).await?;
+//!     let url = query.to_url(BRIGHT_SKY_API)?;
+//!     let response: AlertsResponse = reqwest::get(url).await?.json().await?;
 //!
 //!     println!("Found {} active alerts", response.alerts.len());
 //!
 //!     for alert in response.alerts {
-//!         println!("⚠️ {}", alert.headline_en);
+//!         println!("Alert: {}", alert.headline_en);
 //!         println!("   Severity: {:?}", alert.severity);
 //!         println!("   From {} to {}", alert.onset, alert.expires.unwrap_or_default());
 //!         println!("   {}", alert.description_en);
@@ -56,18 +55,17 @@
 //! ```
 //!
 //! ### Get alerts for specific location
-//! ```rust
-//! use brightsky::{BrightSkyClient, AlertsQueryBuilder, types::AlertsResponse};
+//! ```rust,no_run
+//! use brightsky::{AlertsQueryBuilder, ToBrightSkyUrl, BRIGHT_SKY_API, types::AlertsResponse};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let client = BrightSkyClient::new();
-//!
 //!     let query = AlertsQueryBuilder::new()
 //!         .with_lat_lon((52.52, 13.4))  // Berlin coordinates
 //!         .build()?;
 //!
-//!     let response = client.get::<AlertsResponse>(query).await?;
+//!     let url = query.to_url(BRIGHT_SKY_API)?;
+//!     let response: AlertsResponse = reqwest::get(url).await?.json().await?;
 //!
 //!     if let Some(location) = response.location {
 //!         println!("Alerts for {}, {}", location.name_short, location.state_short);
@@ -79,18 +77,18 @@
 //!     } else {
 //!         println!("Active alerts:");
 //!         for alert in response.alerts {
-//!             let severity_emoji = match alert.severity {
-//!                 Some(brightsky::types::AlertSeverity::Minor) => "🟡",
-//!                 Some(brightsky::types::AlertSeverity::Moderate) => "🟠",
-//!                 Some(brightsky::types::AlertSeverity::Severe) => "🔴",
-//!                 Some(brightsky::types::AlertSeverity::Extreme) => "🟣",
-//!                 None => "⚪",
+//!             let severity_str = match alert.severity {
+//!                 Some(brightsky::types::AlertSeverity::Minor) => "Minor",
+//!                 Some(brightsky::types::AlertSeverity::Moderate) => "Moderate",
+//!                 Some(brightsky::types::AlertSeverity::Severe) => "Severe",
+//!                 Some(brightsky::types::AlertSeverity::Extreme) => "Extreme",
+//!                 None => "Unknown",
 //!             };
 //!
-//!             println!("{} {}", severity_emoji, alert.headline_en);
+//!             println!("[{}] {}", severity_str, alert.headline_en);
 //!
 //!             if let Some(instruction) = alert.instruction_en {
-//!                 println!("   💡 {}", instruction);
+//!                 println!("   Tip: {}", instruction);
 //!             }
 //!         }
 //!     }
@@ -100,19 +98,18 @@
 //! ```
 //!
 //! ### Monitor alerts by warn cell ID
-//! ```rust
-//! use brightsky::{BrightSkyClient, AlertsQueryBuilder, types::AlertsResponse};
+//! ```rust,no_run
+//! use brightsky::{AlertsQueryBuilder, ToBrightSkyUrl, BRIGHT_SKY_API, types::AlertsResponse};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let client = BrightSkyClient::new();
-//!
 //!     let query = AlertsQueryBuilder::new()
 //!         .with_warn_cell_id(803159016)  // Specific municipality cell
 //!         .with_tz("Europe/Berlin")
 //!         .build()?;
 //!
-//!     let response = client.get::<AlertsResponse>(query).await?;
+//!     let url = query.to_url(BRIGHT_SKY_API)?;
+//!     let response: AlertsResponse = reqwest::get(url).await?.json().await?;
 //!
 //!     for alert in response.alerts {
 //!         println!("Alert ID: {}", alert.alert_id);

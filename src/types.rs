@@ -351,24 +351,23 @@ impl<'de> Deserialize<'de> for UnitType {
 ///
 /// ## Example
 ///
-/// ```rust
-/// use brightsky::{BrightSkyClient, WeatherQueryBuilder};
+/// ```rust,no_run
+/// use brightsky::{WeatherQueryBuilder, ToBrightSkyUrl, BRIGHT_SKY_API};
 /// use brightsky::types::WeatherResponse;
 /// use chrono::NaiveDate;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     let client = BrightSkyClient::new();
-///
 ///     let query = WeatherQueryBuilder::new()
 ///         .with_lat_lon((52.52, 13.4))  // Berlin
 ///         .with_date(NaiveDate::from_ymd_opt(2023, 8, 7).unwrap())
 ///         .build()?;
 ///
-///     let response: WeatherResponse = client.get(query).await?;
+///     let url = query.to_url(BRIGHT_SKY_API)?;
+///     let response: WeatherResponse = reqwest::get(url).await?.json().await?;
 ///
 ///     for record in response.weather {
-///         println!("Time: {}, Temp: {:?}°C", record.timestamp, record.temperature);
+///         println!("Time: {}, Temp: {:?}C", record.timestamp, record.temperature);
 ///     }
 ///
 ///     Ok(())
@@ -473,21 +472,20 @@ pub struct Source {
 ///
 /// ## Example
 ///
-/// ```rust
-/// use brightsky::{BrightSkyClient, CurrentWeatherQueryBuilder};
+/// ```rust,no_run
+/// use brightsky::{CurrentWeatherQueryBuilder, ToBrightSkyUrl, BRIGHT_SKY_API};
 /// use brightsky::types::CurrentWeatherResponse;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     let client = BrightSkyClient::new();
-///
 ///     let query = CurrentWeatherQueryBuilder::new()
 ///         .with_lat_lon((52.52, 13.4))  // Berlin coordinates
 ///         .build()?;
 ///
-///     let response: CurrentWeatherResponse = client.get(query).await?;
+///     let url = query.to_url(BRIGHT_SKY_API)?;
+///     let response: CurrentWeatherResponse = reqwest::get(url).await?.json().await?;
 ///
-///     println!("Current temperature: {:?}°C", response.weather.temperature);
+///     println!("Current temperature: {:?}C", response.weather.temperature);
 ///     println!("Conditions: {:?}", response.weather.condition);
 ///
 ///     Ok(())
@@ -620,19 +618,18 @@ pub struct CurrentWeatherSource {
 ///
 /// ## Example
 ///
-/// ```rust
-/// use brightsky::{BrightSkyClient, RadarWeatherQueryBuilder};
+/// ```rust,no_run
+/// use brightsky::{RadarWeatherQueryBuilder, ToBrightSkyUrl, BRIGHT_SKY_API};
 /// use brightsky::types::RadarResponse;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     let client = BrightSkyClient::new();
-///
 ///     let query = RadarWeatherQueryBuilder::new()
-///         .with_lat_lon((52.0, 7.6))  // Near Münster
+///         .with_lat_lon((52.0, 7.6))  // Near Muenster
 ///         .build()?;
 ///
-///     let response: RadarResponse = client.get(query).await?;
+///     let url = query.to_url(BRIGHT_SKY_API)?;
+///     let response: RadarResponse = reqwest::get(url).await?.json().await?;
 ///
 ///     for record in response.radar {
 ///         println!("Radar timestamp: {}", record.timestamp);
@@ -945,19 +942,18 @@ pub struct Location {
 ///
 /// ## Example
 ///
-/// ```rust
-/// use brightsky::{BrightSkyClient, AlertsQueryBuilder};
+/// ```rust,no_run
+/// use brightsky::{AlertsQueryBuilder, ToBrightSkyUrl, BRIGHT_SKY_API};
 /// use brightsky::types::AlertsResponse;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     let client = BrightSkyClient::new();
-///
 ///     let query = AlertsQueryBuilder::new()
 ///         .with_lat_lon((52.52, 13.4))  // Berlin coordinates
 ///         .build()?;
 ///
-///     let response: AlertsResponse = client.get(query).await?;
+///     let url = query.to_url(BRIGHT_SKY_API)?;
+///     let response: AlertsResponse = reqwest::get(url).await?.json().await?;
 ///
 ///     for alert in response.alerts {
 ///         let severity_str = match alert.severity {

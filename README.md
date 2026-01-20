@@ -6,13 +6,38 @@ Type-safe query builders and response types for the [Bright Sky API](https://bri
 [![Documentation](https://docs.rs/brightsky/badge.svg)](https://docs.rs/brightsky)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Design Philosophy
-
-This crate provides **query builders** and **response types** only. You bring your own HTTP client (reqwest, ureq, reqwless, etc.). This keeps the crate lightweight and works in both std and no_std environments.
-
 ## Quick Start
 
-Add this to your `Cargo.toml`:
+### With reqwest Extension Trait (Recommended)
+
+The easiest way to use brightsky with reqwest:
+
+```toml
+[dependencies]
+brightsky = { version = "0.2", features = ["reqwest"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+```
+
+```rust
+use brightsky::{CurrentWeatherQueryBuilder, ext::BrightSkyReqwestExt, types::CurrentWeatherResponse};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = reqwest::Client::new();
+
+    let query = CurrentWeatherQueryBuilder::new()
+        .with_lat_lon((52.52, 13.4))  // Berlin
+        .build()?;
+
+    let response: CurrentWeatherResponse = client.get_brightsky(query).await?;
+    println!("Temperature: {:?}C", response.weather.temperature);
+    Ok(())
+}
+```
+
+### Manual HTTP Client Usage
+
+If you prefer to handle HTTP yourself:
 
 ```toml
 [dependencies]
@@ -21,47 +46,42 @@ reqwest = { version = "0.13", features = ["json"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
-## Examples
-
-### Current Weather
-
 ```rust
 use brightsky::{CurrentWeatherQueryBuilder, ToBrightSkyUrl, BRIGHT_SKY_API, types::CurrentWeatherResponse};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Build the query
     let query = CurrentWeatherQueryBuilder::new()
-        .with_lat_lon((52.52, 13.4))  // Berlin
+        .with_lat_lon((52.52, 13.4))
         .build()?;
 
-    // Generate URL and fetch with reqwest
     let url = query.to_url(BRIGHT_SKY_API)?;
     let response: CurrentWeatherResponse = reqwest::get(url).await?.json().await?;
 
     println!("Temperature: {:?}C", response.weather.temperature);
-    println!("Condition: {:?}", response.weather.condition);
     Ok(())
 }
 ```
 
+## Examples
+
 ### Weather Forecast/History
 
 ```rust
-use brightsky::{WeatherQueryBuilder, ToBrightSkyUrl, BRIGHT_SKY_API, types::{WeatherResponse, UnitType}};
+use brightsky::{WeatherQueryBuilder, ext::BrightSkyReqwestExt, types::{WeatherResponse, UnitType}};
 use chrono::NaiveDate;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = reqwest::Client::new();
+
     let query = WeatherQueryBuilder::new()
         .with_lat_lon((52.52, 13.4))
         .with_date(NaiveDate::from_ymd_opt(2025, 1, 15).unwrap())
         .with_units(UnitType::Si)
         .build()?;
 
-    let url = query.to_url(BRIGHT_SKY_API)?;
-    let response: WeatherResponse = reqwest::get(url).await?.json().await?;
-
+    let response: WeatherResponse = client.get_brightsky(query).await?;
     println!("Found {} hourly records", response.weather.len());
     Ok(())
 }
@@ -69,7 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ### Embedded Usage (no_std)
 
-For embedded systems, use `to_url_string()` instead of `to_url()`:
+For embedded systems, use `to_url_string()` with your HTTP client:
 
 ```rust,ignore
 use brightsky::{CurrentWeatherQueryBuilder, ToBrightSkyUrl, BRIGHT_SKY_API, types::CurrentWeatherResponse};
@@ -81,8 +101,7 @@ let query = CurrentWeatherQueryBuilder::new()
 // Get URL as String (works in no_std)
 let url = query.to_url_string(BRIGHT_SKY_API)?;
 
-// Use your HTTP client (reqwless, etc.) to fetch
-// Then deserialize with serde_json
+// Use your HTTP client (reqwless, etc.) to fetch, then deserialize
 let response: CurrentWeatherResponse = serde_json::from_slice(&body)?;
 ```
 
@@ -104,8 +123,12 @@ let response: CurrentWeatherResponse = serde_json::from_slice(&body)?;
 
 ## Feature Flags
 
-- `std` (default): Enables `url::Url` support via `to_url()` method
-- Without `std`: Only `to_url_string()` available (no_std compatible)
+| Feature | Description |
+|---------|-------------|
+| `std` (default) | Enables `url::Url` support via `to_url()` method |
+| `reqwest` | Enables `BrightSkyReqwestExt` trait for ergonomic reqwest usage |
+
+Without `std`: Only `to_url_string()` available (no_std compatible for embedded systems).
 
 ## Data Sources
 

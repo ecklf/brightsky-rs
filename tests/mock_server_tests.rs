@@ -6,6 +6,9 @@ use wiremock::{
     matchers::{method, path, query_param},
 };
 
+#[cfg(feature = "reqwest")]
+use brightsky::ext::BrightSkyReqwestExt;
+
 #[tokio::test]
 async fn test_current_weather_api_success() {
     let mock_server = MockServer::start().await;
@@ -299,4 +302,86 @@ async fn test_empty_weather_array() {
 
     assert_eq!(response.weather.len(), 0);
     assert_eq!(response.sources.len(), 0);
+}
+
+// Tests for the reqwest extension trait
+#[cfg(feature = "reqwest")]
+mod ext_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_reqwest_ext_get_brightsky() {
+        let mock_server = MockServer::start().await;
+
+        let mock_response = r#"{
+            "weather": {
+                "timestamp": "2023-08-07T12:00:00+00:00",
+                "source_id": 1234,
+                "temperature": 22.5,
+                "condition": "dry",
+                "icon": "clear-day"
+            },
+            "sources": []
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/current_weather"))
+            .and(query_param("lat", "52.52"))
+            .and(query_param("lon", "13.4"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(mock_response))
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let query = CurrentWeatherQueryBuilder::new()
+            .with_lat_lon((52.52, 13.4))
+            .build()
+            .unwrap();
+
+        let response: CurrentWeatherResponse = client
+            .get_brightsky_with_host(query, &mock_server.uri())
+            .await
+            .unwrap();
+
+        assert_eq!(response.weather.temperature, Some(22.5));
+        assert_eq!(response.weather.condition, Some(WeatherCondition::Dry));
+    }
+
+    #[tokio::test]
+    async fn test_reqwest_ext_weather_query() {
+        let mock_server = MockServer::start().await;
+
+        let mock_response = r#"{
+            "weather": [
+                {
+                    "timestamp": "2023-08-07T00:00:00+00:00",
+                    "source_id": 5678,
+                    "temperature": 25.0
+                }
+            ],
+            "sources": []
+        }"#;
+
+        Mock::given(method("GET"))
+            .and(path("/weather"))
+            .and(query_param("date", "2023-08-07"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(mock_response))
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let query = WeatherQueryBuilder::new()
+            .with_date(NaiveDate::from_ymd_opt(2023, 8, 7).unwrap())
+            .with_lat_lon((52.52, 13.4))
+            .build()
+            .unwrap();
+
+        let response: WeatherResponse = client
+            .get_brightsky_with_host(query, &mock_server.uri())
+            .await
+            .unwrap();
+
+        assert_eq!(response.weather.len(), 1);
+        assert_eq!(response.weather[0].temperature, Some(25.0));
+    }
 }

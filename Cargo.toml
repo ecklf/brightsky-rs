@@ -1,6 +1,6 @@
 [package]
 name = "brightsky"
-version = "0.2.0"
+version = "1.0.0"
 edition = "2024"
 authors = ["Florentin Eckl <ecklf@icloud.com>"]
 description = "Type-safe query builders and response types for the Bright Sky weather API"
@@ -22,8 +22,11 @@ base64 = { version = "0.22", default-features = false, features = ["alloc"] }
 url = { version = "2", optional = true }
 flate2 = { version = "1.1", optional = true }
 
+# Optional HTTP client integrations
+reqwest = { version = "0.13", features = ["json"], optional = true }
+
 [dev-dependencies]
-tokio = { version = "1", features = ["rt", "macros"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
 tokio-test = "0.4"
 reqwest = { version = "0.13", features = ["json"] }
 wiremock = "0.6"
@@ -38,3 +41,6 @@ std = [
     "chrono/std",
     "chrono/clock",
 ]
+
+# HTTP client extension traits
+reqwest = ["std", "dep:reqwest"]

@@ -30,20 +30,19 @@
 //! ## Usage Examples
 //!
 //! ### Basic radar query with compressed data (recommended)
-//! ```rust
-//! use brightsky::{BrightSkyClient, RadarWeatherQueryBuilder, types::{RadarCompressionFormat, RadarResponse}};
+//! ```rust,no_run
+//! use brightsky::{RadarWeatherQueryBuilder, ToBrightSkyUrl, BRIGHT_SKY_API, types::{RadarCompressionFormat, RadarResponse}};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let client = BrightSkyClient::new();
-//!
 //!     let query = RadarWeatherQueryBuilder::new()
 //!         .with_lat_lon((52.0, 7.6))  // Near Münster
 //!         .with_distance(50_000)      // 50km radius
 //!         .with_compression_format(RadarCompressionFormat::Compressed)
 //!         .build()?;
 //!
-//!     let response = client.get::<RadarResponse>(query).await?;
+//!     let url = query.to_url(BRIGHT_SKY_API)?;
+//!     let response: RadarResponse = reqwest::get(url).await?.json().await?;
 //!
 //!     for record in response.radar {
 //!         println!("Radar data at {}: {} pixels",
@@ -62,24 +61,23 @@
 //! ```
 //!
 //! ### Custom bounding box for specific area
-//! ```rust
-//! use brightsky::{BrightSkyClient, RadarWeatherQueryBuilder, types::{RadarCompressionFormat, RadarResponse}};
+//! ```rust,no_run
+//! use brightsky::{RadarWeatherQueryBuilder, ToBrightSkyUrl, BRIGHT_SKY_API, types::{RadarCompressionFormat, RadarResponse}};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let client = BrightSkyClient::new();
-//!
 //!     let query = RadarWeatherQueryBuilder::new()
-//!         .with_bbox(vec![100, 100, 300, 300])  // 200×200 pixel area
+//!         .with_bbox(vec![100, 100, 300, 300])  // 200x200 pixel area
 //!         .with_compression_format(RadarCompressionFormat::Plain)  // For easy processing
 //!         .build()?;
 //!
-//!     let response = client.get::<RadarResponse>(query).await?;
+//!     let url = query.to_url(BRIGHT_SKY_API)?;
+//!     let response: RadarResponse = reqwest::get(url).await?.json().await?;
 //!
 //!     // Process precipitation data
 //!     for record in response.radar {
 //!         if let brightsky::types::MaybeCompressedPrecipitation::Plain(grid) = record.precipitation_5 {
-//!             println!("Processing {}×{} precipitation grid for {}",
+//!             println!("Processing {}x{} precipitation grid for {}",
 //!                 grid.len(),
 //!                 grid.first().map_or(0, |row| row.len()),
 //!                 record.timestamp

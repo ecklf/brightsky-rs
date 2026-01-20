@@ -58,7 +58,23 @@
 //! ## Feature Flags
 //!
 //! - `std` (default): Enable std library support and `url::Url` generation
+//! - `reqwest`: Enable `BrightSkyReqwestExt` trait for ergonomic reqwest usage
 //! - Without `std`: Only string URL generation available (no_std compatible)
+//!
+//! ## With reqwest Extension Trait
+//!
+//! Enable the `reqwest` feature for the most ergonomic API:
+//!
+//! ```rust,ignore
+//! use brightsky::{CurrentWeatherQueryBuilder, ext::BrightSkyReqwestExt, types::CurrentWeatherResponse};
+//!
+//! let client = reqwest::Client::new();
+//! let query = CurrentWeatherQueryBuilder::new()
+//!     .with_lat_lon((52.52, 13.4))
+//!     .build()?;
+//!
+//! let response: CurrentWeatherResponse = client.get_brightsky(query).await?;
+//! ```
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -72,6 +88,9 @@ use alloc::string::String;
 use url::Url;
 
 pub mod types;
+
+#[cfg(feature = "reqwest")]
+pub mod ext;
 
 mod weather;
 pub use weather::WeatherQueryBuilder;
@@ -101,17 +120,34 @@ pub const BRIGHT_SKY_API: &str = "https://api.brightsky.dev";
 /// ```rust
 /// use brightsky::{CurrentWeatherQueryBuilder, ToBrightSkyUrl, BRIGHT_SKY_API};
 ///
+/// // Build a query
 /// let query = CurrentWeatherQueryBuilder::new()
 ///     .with_lat_lon((52.52, 13.4))
 ///     .build()
 ///     .unwrap();
 ///
-/// // With std feature: get url::Url
-/// # #[cfg(feature = "std")]
-/// let url = query.to_url(BRIGHT_SKY_API).unwrap();
-///
-/// // Always available: get String
+/// // Convert to URL string (always available, including no_std)
 /// let url_string = query.to_url_string(BRIGHT_SKY_API).unwrap();
+/// assert!(url_string.contains("/current_weather"));
+/// ```
+///
+/// With the `std` feature, you can also get a `url::Url`:
+///
+/// ```rust
+/// # #[cfg(feature = "std")]
+/// # fn main() {
+/// use brightsky::{CurrentWeatherQueryBuilder, ToBrightSkyUrl, BRIGHT_SKY_API};
+///
+/// let query = CurrentWeatherQueryBuilder::new()
+///     .with_lat_lon((52.52, 13.4))
+///     .build()
+///     .unwrap();
+///
+/// let url = query.to_url(BRIGHT_SKY_API).unwrap();
+/// assert_eq!(url.path(), "/current_weather");
+/// # }
+/// # #[cfg(not(feature = "std"))]
+/// # fn main() {}
 /// ```
 pub trait ToBrightSkyUrl {
     /// Convert the query builder into a `url::Url` for the Bright Sky API.
