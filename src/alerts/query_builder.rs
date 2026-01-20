@@ -4,7 +4,7 @@ extern crate alloc;
 #[cfg(not(feature = "std"))]
 use alloc::{format, string::String, string::ToString};
 
-use crate::{BrightSkyError, ToBrightSkyClientUrl};
+use crate::{BrightSkyError, ToBrightSkyUrl};
 
 #[cfg(feature = "std")]
 use url::Url;
@@ -161,7 +161,7 @@ impl AlertsQueryBuilder {
     }
 }
 
-impl ToBrightSkyClientUrl for AlertsQueryBuilder {
+impl ToBrightSkyUrl for AlertsQueryBuilder {
     #[cfg(feature = "std")]
     fn to_url(self, host: &str) -> Result<Url, BrightSkyError> {
         let base = Url::parse(host)?;

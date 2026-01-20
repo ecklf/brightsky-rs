@@ -3,40 +3,34 @@ name = "brightsky"
 version = "0.2.0"
 edition = "2024"
 authors = ["Florentin Eckl <ecklf@icloud.com>"]
-description = "A Rust client library for the Bright Sky weather API"
+description = "Type-safe query builders and response types for the Bright Sky weather API"
 homepage = "https://github.com/ecklf/brightsky-rs"
 repository = "https://github.com/ecklf/brightsky-rs"
 readme = "README.md"
 license-file = "LICENSE"
-keywords = ["weather", "api", "client", "brightsky", "meteorology"]
-categories = ["api-bindings", "web-programming", "science", "embedded", "no-std"]
+keywords = ["weather", "api", "brightsky", "dwd", "meteorology"]
+categories = ["api-bindings", "data-structures", "embedded", "no-std"]
 
 [dependencies]
-# core
+# Core - always needed
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 chrono = { version = "0.4", default-features = false, features = ["serde", "alloc"] }
 base64 = { version = "0.22", default-features = false, features = ["alloc"] }
-url = { version = "2", optional = true }
-# error handling
-thiserror = { version = "2.0", optional = true }
 
-# std backend
-reqwest = { version = "0.13", features = ["json"], optional = true }
-tokio = { version = "1", features = ["full"], optional = true }
-# compression (for radar data - std)
+# std only
+url = { version = "2", optional = true }
 flate2 = { version = "1.1", optional = true }
 
 [dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros"] }
 tokio-test = "0.4"
+reqwest = { version = "0.13", features = ["json"] }
 wiremock = "0.6"
 
 [features]
-default = ["std", "reqwest-client"]
-
-# environment features
+default = ["std"]
 std = [
-    "dep:thiserror",
     "dep:url",
     "dep:flate2",
     "serde/std",
@@ -44,6 +38,3 @@ std = [
     "chrono/std",
     "chrono/clock",
 ]
-
-# client backends (std only)
-reqwest-client = ["std", "dep:reqwest", "dep:tokio"]

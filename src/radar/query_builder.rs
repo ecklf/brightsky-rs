@@ -4,7 +4,7 @@ extern crate alloc;
 #[cfg(not(feature = "std"))]
 use alloc::{format, string::String, string::ToString, vec::Vec};
 
-use crate::{BrightSkyError, ToBrightSkyClientUrl, types::RadarCompressionFormat};
+use crate::{BrightSkyError, ToBrightSkyUrl, types::RadarCompressionFormat};
 use chrono::NaiveDate;
 
 #[cfg(feature = "std")]
@@ -202,7 +202,7 @@ impl RadarWeatherQueryBuilder {
     }
 }
 
-impl ToBrightSkyClientUrl for RadarWeatherQueryBuilder {
+impl ToBrightSkyUrl for RadarWeatherQueryBuilder {
     #[cfg(feature = "std")]
     fn to_url(self, host: &str) -> Result<Url, BrightSkyError> {
         let base = Url::parse(host)?;
