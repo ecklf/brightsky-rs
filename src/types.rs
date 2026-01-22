@@ -4,8 +4,72 @@
 //! the Bright Sky API, including request parameters, response types, and
 //! various enumerations for weather data.
 
+#[cfg(not(feature = "std"))]
+extern crate alloc;
+
+#[cfg(not(feature = "std"))]
+use alloc::{collections::BTreeMap, format, string::String, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::collections::HashMap;
+
 use base64::{Engine as _, engine::general_purpose};
 use serde::{Deserialize, Deserializer, Serialize};
+
+#[cfg(not(feature = "std"))]
+use alloc::string::ToString;
+
+/// Deserialize a value that can be either a string or an integer into a String.
+/// This handles API inconsistencies where fields like `alert_id` may be returned
+/// as an integer in some responses and as a string in others.
+fn deserialize_string_or_int<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::{self, Visitor};
+
+    struct StringOrIntVisitor;
+
+    impl<'de> Visitor<'de> for StringOrIntVisitor {
+        type Value = String;
+
+        fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
+            formatter.write_str("a string or an integer")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(value.to_string())
+        }
+
+        fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(value)
+        }
+
+        fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(value.to_string())
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(value.to_string())
+        }
+    }
+
+    deserializer.deserialize_any(StringOrIntVisitor)
+}
+
+#[cfg(feature = "std")]
 use std::io::Read;
 
 /// Format options for radar precipitation data encoding.
@@ -76,18 +140,21 @@ impl<'de> Deserialize<'de> for MaybeCompressedPrecipitation {
                     .decode(&s)
                     .map_err(|e| serde::de::Error::custom(format!("Base64 decode error: {}", e)))?;
 
-                // Attempt to decompress using zlib (which is the default return format)
-                let mut decoder = flate2::read::ZlibDecoder::new(&decoded[..]);
-                let mut decompressed = Vec::new();
-                if decoder.read_to_end(&mut decompressed).is_ok() {
-                    let values: Vec<u16> = decompressed
-                        .chunks_exact(2)
-                        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
-                        .collect();
-                    return Ok(MaybeCompressedPrecipitation::Compressed(values));
+                // Attempt to decompress using zlib (requires std feature for flate2)
+                #[cfg(feature = "std")]
+                {
+                    let mut decoder = flate2::read::ZlibDecoder::new(&decoded[..]);
+                    let mut decompressed = Vec::new();
+                    if decoder.read_to_end(&mut decompressed).is_ok() {
+                        let values: Vec<u16> = decompressed
+                            .chunks_exact(2)
+                            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+                            .collect();
+                        return Ok(MaybeCompressedPrecipitation::Compressed(values));
+                    }
                 }
 
-                // If decompression fails, treat it as raw bytes
+                // If decompression fails (or not available in no_std), treat it as raw bytes
                 let values: Vec<u16> = decoded
                     .chunks_exact(2)
                     .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
@@ -284,24 +351,23 @@ impl<'de> Deserialize<'de> for UnitType {
 ///
 /// ## Example
 ///
-/// ```rust
-/// use brightsky::{BrightSkyClient, WeatherQueryBuilder};
+/// ```rust,no_run
+/// use brightsky::{WeatherQueryBuilder, ToBrightSkyUrl, BRIGHT_SKY_API};
 /// use brightsky::types::WeatherResponse;
 /// use chrono::NaiveDate;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     let client = BrightSkyClient::new();
-///
 ///     let query = WeatherQueryBuilder::new()
 ///         .with_lat_lon((52.52, 13.4))  // Berlin
 ///         .with_date(NaiveDate::from_ymd_opt(2023, 8, 7).unwrap())
 ///         .build()?;
 ///
-///     let response: WeatherResponse = client.get(query).await?;
+///     let url = query.to_url(BRIGHT_SKY_API)?;
+///     let response: WeatherResponse = reqwest::get(url).await?.json().await?;
 ///
 ///     for record in response.weather {
-///         println!("Time: {}, Temp: {:?}°C", record.timestamp, record.temperature);
+///         println!("Time: {}, Temp: {:?}C", record.timestamp, record.temperature);
 ///     }
 ///
 ///     Ok(())
@@ -343,7 +409,11 @@ pub struct Weather {
     /// Visibility at timestamp (meters)
     pub visibility: Option<i64>,
     /// Mapping of parameters to alternative source IDs used for missing values
-    pub fallback_source_ids: Option<std::collections::HashMap<String, i64>>,
+    #[cfg(feature = "std")]
+    pub fallback_source_ids: Option<HashMap<String, i64>>,
+    /// Mapping of parameters to alternative source IDs used for missing values
+    #[cfg(not(feature = "std"))]
+    pub fallback_source_ids: Option<BTreeMap<String, i64>>,
     /// Total precipitation during previous 60 minutes (mm)
     pub precipitation: Option<f64>,
     /// Solar irradiation during previous 60 minutes (kWh/m² or J/m²)
@@ -402,21 +472,20 @@ pub struct Source {
 ///
 /// ## Example
 ///
-/// ```rust
-/// use brightsky::{BrightSkyClient, CurrentWeatherQueryBuilder};
+/// ```rust,no_run
+/// use brightsky::{CurrentWeatherQueryBuilder, ToBrightSkyUrl, BRIGHT_SKY_API};
 /// use brightsky::types::CurrentWeatherResponse;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     let client = BrightSkyClient::new();
-///
 ///     let query = CurrentWeatherQueryBuilder::new()
 ///         .with_lat_lon((52.52, 13.4))  // Berlin coordinates
 ///         .build()?;
 ///
-///     let response: CurrentWeatherResponse = client.get(query).await?;
+///     let url = query.to_url(BRIGHT_SKY_API)?;
+///     let response: CurrentWeatherResponse = reqwest::get(url).await?.json().await?;
 ///
-///     println!("Current temperature: {:?}°C", response.weather.temperature);
+///     println!("Current temperature: {:?}C", response.weather.temperature);
 ///     println!("Conditions: {:?}", response.weather.condition);
 ///
 ///     Ok(())
@@ -460,7 +529,12 @@ pub struct CurrentWeather {
     pub visibility: Option<i64>,
     /// Mapping of meteorological parameters to alternative source IDs
     /// used to fill missing values in the main source
-    pub fallback_source_ids: Option<std::collections::HashMap<String, i64>>,
+    #[cfg(feature = "std")]
+    pub fallback_source_ids: Option<HashMap<String, i64>>,
+    /// Mapping of meteorological parameters to alternative source IDs
+    /// used to fill missing values in the main source
+    #[cfg(not(feature = "std"))]
+    pub fallback_source_ids: Option<BTreeMap<String, i64>>,
     /// Total precipitation during previous 10 minutes (mm)
     pub precipitation_10: Option<f64>,
     /// Total precipitation during previous 30 minutes (mm)
@@ -544,19 +618,18 @@ pub struct CurrentWeatherSource {
 ///
 /// ## Example
 ///
-/// ```rust
-/// use brightsky::{BrightSkyClient, RadarWeatherQueryBuilder};
+/// ```rust,no_run
+/// use brightsky::{RadarWeatherQueryBuilder, ToBrightSkyUrl, BRIGHT_SKY_API};
 /// use brightsky::types::RadarResponse;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     let client = BrightSkyClient::new();
-///
 ///     let query = RadarWeatherQueryBuilder::new()
-///         .with_lat_lon((52.0, 7.6))  // Near Münster
+///         .with_lat_lon((52.0, 7.6))  // Near Muenster
 ///         .build()?;
 ///
-///     let response: RadarResponse = client.get(query).await?;
+///     let url = query.to_url(BRIGHT_SKY_API)?;
+///     let response: RadarResponse = reqwest::get(url).await?.json().await?;
 ///
 ///     for record in response.radar {
 ///         println!("Radar timestamp: {}", record.timestamp);
@@ -798,7 +871,10 @@ impl<'de> Deserialize<'de> for AlertCertainty {
 pub struct Alert {
     /// Bright Sky internal ID for this alert
     pub id: i64,
-    /// Unique CAP (Common Alerting Protocol) message identifier
+    /// Unique CAP (Common Alerting Protocol) message identifier.
+    /// Note: The API may return this as either a string (CAP ID) or integer
+    /// depending on the query parameters used.
+    #[serde(deserialize_with = "deserialize_string_or_int")]
     pub alert_id: String,
     /// Alert status (actual warning or test)
     pub status: AlertStatus,
@@ -866,19 +942,18 @@ pub struct Location {
 ///
 /// ## Example
 ///
-/// ```rust
-/// use brightsky::{BrightSkyClient, AlertsQueryBuilder};
+/// ```rust,no_run
+/// use brightsky::{AlertsQueryBuilder, ToBrightSkyUrl, BRIGHT_SKY_API};
 /// use brightsky::types::AlertsResponse;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     let client = BrightSkyClient::new();
-///
 ///     let query = AlertsQueryBuilder::new()
 ///         .with_lat_lon((52.52, 13.4))  // Berlin coordinates
 ///         .build()?;
 ///
-///     let response: AlertsResponse = client.get(query).await?;
+///     let url = query.to_url(BRIGHT_SKY_API)?;
+///     let response: AlertsResponse = reqwest::get(url).await?.json().await?;
 ///
 ///     for alert in response.alerts {
 ///         let severity_str = match alert.severity {

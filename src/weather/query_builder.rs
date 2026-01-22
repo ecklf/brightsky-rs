@@ -1,5 +1,13 @@
-use crate::{BlindSkyClientError, ToBrightSkyClientUrl, types::UnitType};
+#[cfg(not(feature = "std"))]
+extern crate alloc;
+
+#[cfg(not(feature = "std"))]
+use alloc::{format, string::String, string::ToString, vec::Vec};
+
+use crate::{BrightSkyError, ToBrightSkyUrl, types::UnitType};
 use chrono::NaiveDate;
+
+#[cfg(feature = "std")]
 use url::Url;
 
 /// Query builder for the weather endpoint (`/weather`).
@@ -335,7 +343,7 @@ impl<'a> WeatherQueryBuilder<'a> {
     ///
     /// # Returns
     ///
-    /// Returns `Ok(Self)` if validation passes, otherwise returns a `BlindSkyClientError`.
+    /// Returns `Ok(Self)` if validation passes, otherwise returns a `BrightSkyError`.
     ///
     /// # Errors
     ///
@@ -359,17 +367,17 @@ impl<'a> WeatherQueryBuilder<'a> {
     ///     Ok(())
     /// }
     /// ```
-    pub fn build(self) -> Result<Self, BlindSkyClientError> {
+    pub fn build(self) -> Result<Self, BrightSkyError> {
         if self.date.is_none() {
-            return Err(BlindSkyClientError::DateNotSet);
+            return Err(BrightSkyError::DateNotSet);
         }
         if let Some(lat_str) = &self.lat {
             lat_str
                 .parse::<f64>()
-                .map_err(BlindSkyClientError::ParseFloatError)
-                .and_then(|lat| -> Result<(), BlindSkyClientError> {
+                .map_err(BrightSkyError::ParseFloatError)
+                .and_then(|lat| -> Result<(), BrightSkyError> {
                     if !(-90.0..=90.0).contains(&lat) {
-                        Err(BlindSkyClientError::InvalidLongitude(lat))
+                        Err(BrightSkyError::InvalidLongitude(lat))
                     } else {
                         Ok(())
                     }
@@ -378,10 +386,10 @@ impl<'a> WeatherQueryBuilder<'a> {
         if let Some(lon_str) = &self.lon {
             lon_str
                 .parse::<f64>()
-                .map_err(BlindSkyClientError::ParseFloatError)
-                .and_then(|lon| -> Result<(), BlindSkyClientError> {
+                .map_err(BrightSkyError::ParseFloatError)
+                .and_then(|lon| -> Result<(), BrightSkyError> {
                     if !(-180.0..=180.0).contains(&lon) {
-                        Err(BlindSkyClientError::InvalidLongitude(lon))
+                        Err(BrightSkyError::InvalidLongitude(lon))
                     } else {
                         Ok(())
                     }
@@ -390,10 +398,10 @@ impl<'a> WeatherQueryBuilder<'a> {
         if let Some(max_dist_str) = &self.max_dist {
             max_dist_str
                 .parse::<u32>()
-                .map_err(BlindSkyClientError::ParseIntError)
+                .map_err(BrightSkyError::ParseIntError)
                 .and_then(|max_dist| {
                     if max_dist > 500000 {
-                        Err(BlindSkyClientError::InvalidMaxDistance(max_dist))
+                        Err(BrightSkyError::InvalidMaxDistance(max_dist))
                     } else {
                         Ok(())
                     }
@@ -404,12 +412,11 @@ impl<'a> WeatherQueryBuilder<'a> {
     }
 }
 
-impl<'a> ToBrightSkyClientUrl for WeatherQueryBuilder<'a> {
-    fn to_url(self, host: &str) -> Result<Url, BlindSkyClientError> {
-        let base = Url::parse(host).map_err(BlindSkyClientError::UrlParseError)?; // Dummy error
-        let mut url = base
-            .join("weather")
-            .map_err(BlindSkyClientError::UrlParseError)?; // Dummy error
+impl<'a> ToBrightSkyUrl for WeatherQueryBuilder<'a> {
+    #[cfg(feature = "std")]
+    fn to_url(self, host: &str) -> Result<Url, BrightSkyError> {
+        let base = Url::parse(host)?;
+        let mut url = base.join("weather")?;
 
         let mut query = url.query_pairs_mut();
 
@@ -451,6 +458,61 @@ impl<'a> ToBrightSkyClientUrl for WeatherQueryBuilder<'a> {
             query.append_pair("units", unit_string.trim_matches('"'));
         }
         drop(query);
+        Ok(url)
+    }
+
+    fn to_url_string(self, host: &str) -> Result<String, BrightSkyError> {
+        #[cfg(not(feature = "std"))]
+        use alloc::vec::Vec;
+        #[cfg(feature = "std")]
+        use std::vec::Vec;
+
+        let mut url = format!("{}/weather", host.trim_end_matches('/'));
+        let mut params = Vec::new();
+
+        if let Some(date) = self.date {
+            params.push(format!("date={}", date));
+        }
+        if let Some(last_date) = self.last_date {
+            params.push(format!("last_date={}", last_date));
+        }
+        if let Some(lat) = self.lat {
+            params.push(format!("lat={}", lat));
+        }
+        if let Some(lon) = self.lon {
+            params.push(format!("lon={}", lon));
+        }
+        if let Some(max_dist) = self.max_dist {
+            params.push(format!("max_dist={}", max_dist));
+        }
+        if let Some(dwd_station_id) = self.dwd_station_id {
+            for id in dwd_station_id {
+                params.push(format!("dwd_station_id={}", id));
+            }
+        }
+        if let Some(wmo_station_id) = self.wmo_station_id {
+            for id in wmo_station_id {
+                params.push(format!("wmo_station_id={}", id));
+            }
+        }
+        if let Some(source_id) = self.source_id {
+            for id in source_id {
+                params.push(format!("source_id={}", id));
+            }
+        }
+        if let Some(tz) = self.tz {
+            params.push(format!("tz={}", tz));
+        }
+        if let Some(units) = self.units {
+            let unit_string = serde_json::to_string(&units).unwrap();
+            params.push(format!("units={}", unit_string.trim_matches('"')));
+        }
+
+        if !params.is_empty() {
+            url.push('?');
+            url.push_str(&params.join("&"));
+        }
+
         Ok(url)
     }
 }

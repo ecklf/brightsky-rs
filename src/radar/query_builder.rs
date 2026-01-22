@@ -1,5 +1,13 @@
-use crate::{BlindSkyClientError, ToBrightSkyClientUrl, types::RadarCompressionFormat};
+#[cfg(not(feature = "std"))]
+extern crate alloc;
+
+#[cfg(not(feature = "std"))]
+use alloc::{format, string::String, string::ToString, vec::Vec};
+
+use crate::{BrightSkyError, ToBrightSkyUrl, types::RadarCompressionFormat};
 use chrono::NaiveDate;
+
+#[cfg(feature = "std")]
 use url::Url;
 
 /// Query builder for the radar endpoint (`/radar`).
@@ -9,7 +17,7 @@ use url::Url;
 ///
 /// ## Important Notes
 ///
-/// - **Large data sets**: Radar data covers a 1200×1100 pixel grid (1.2M pixels total)
+/// - **Large data sets**: Radar data covers a 1200x1100 pixel grid (1.2M pixels total)
 /// - **Use bounding boxes**: Always use `lat`/`lon` or `bbox` when possible to reduce response size
 /// - **Compression formats**: Use `Compressed` format for best performance and smallest responses
 /// - **Data retention**: Past radar records are kept for 6 hours only
@@ -43,7 +51,7 @@ use url::Url;
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///     let query = RadarWeatherQueryBuilder::new()
-///         .with_bbox(vec![100, 100, 300, 300])  // Custom 200×200 pixel area
+///         .with_bbox(vec![100, 100, 300, 300])  // Custom 200x200 pixel area
 ///         .build()?;
 ///     Ok(())
 /// }
@@ -109,8 +117,6 @@ impl RadarWeatherQueryBuilder {
     ///     .with_lat_lon((52.0, 7.6));  // Near Münster
     /// ```
     pub fn with_lat_lon(mut self, lat_lon: (f64, f64)) -> Self {
-        // Format coordinates preserving all decimal precision
-        // For whole numbers, ensure at least one decimal place is shown
         let lat_str = format!("{}", lat_lon.0);
         let lon_str = format!("{}", lat_lon.1);
 
@@ -130,183 +136,50 @@ impl RadarWeatherQueryBuilder {
     }
 
     /// Set a custom bounding box for radar data in pixel coordinates.
-    ///
-    /// The full radar grid is 1200×1100 pixels. Using a smaller bounding box
-    /// significantly reduces response size and processing time.
-    ///
-    /// # Parameters
-    ///
-    /// * `bbox` - Vector of [top, left, bottom, right] pixel coordinates (edges inclusive)
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use brightsky::RadarWeatherQueryBuilder;
-    ///
-    /// let query = RadarWeatherQueryBuilder::new()
-    ///     .with_bbox(vec![100, 100, 300, 300]);  // 200×200 pixel area
-    /// ```
     pub fn with_bbox(mut self, bbox: Vec<i64>) -> Self {
         self.bbox = Some(bbox);
         self
     }
 
     /// Set the distance radius when using lat/lon coordinates.
-    ///
-    /// Must be used together with `lat` and `lon`. Data will reach this distance
-    /// in meters to each side of the specified location.
-    ///
-    /// # Parameters
-    ///
-    /// * `distance` - Distance in meters (default: 200,000 = 200km)
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use brightsky::RadarWeatherQueryBuilder;
-    ///
-    /// let query = RadarWeatherQueryBuilder::new()
-    ///     .with_lat_lon((52.0, 7.6))
-    ///     .with_distance(100_000);  // 100km radius
-    /// ```
     pub fn with_distance(mut self, distance: u64) -> Self {
         self.distance = Some(distance);
         self
     }
 
     /// Set the start date for radar data retrieval (optional).
-    ///
-    /// This is the timestamp of the first radar record to retrieve.
-    /// If not specified, defaults to 1 hour before the latest measurement.
-    ///
-    /// # Parameters
-    ///
-    /// * `date` - First date to retrieve radar data for
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use brightsky::RadarWeatherQueryBuilder;
-    /// use chrono::NaiveDate;
-    ///
-    /// let query = RadarWeatherQueryBuilder::new()
-    ///     .with_date(NaiveDate::from_ymd_opt(2023, 8, 7).unwrap());
-    /// ```
     pub fn with_date(mut self, date: NaiveDate) -> Self {
         self.date = Some(date);
         self
     }
 
     /// Set the end date for radar data retrieval (optional).
-    ///
-    /// This is the timestamp of the last radar record to retrieve.
-    /// If not specified, defaults to 2 hours after `date`.
-    ///
-    /// # Parameters
-    ///
-    /// * `last_date` - Last date to retrieve radar data for
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use brightsky::RadarWeatherQueryBuilder;
-    /// use chrono::NaiveDate;
-    ///
-    /// let query = RadarWeatherQueryBuilder::new()
-    ///     .with_date(NaiveDate::from_ymd_opt(2023, 8, 7).unwrap())
-    ///     .with_last_date(NaiveDate::from_ymd_opt(2023, 8, 7).unwrap());  // Same day
-    /// ```
     pub fn with_last_date(mut self, last_date: NaiveDate) -> Self {
         self.last_date = Some(last_date);
         self
     }
 
     /// Set the timezone for timestamp presentation.
-    ///
-    /// Timestamps in the response will be presented in this timezone.
-    /// Also used as timezone when parsing `date` and `last_date` unless they have explicit UTC offsets.
-    /// Uses tz database names (e.g., "Europe/Berlin", "UTC").
-    ///
-    /// # Parameters
-    ///
-    /// * `tz` - Timezone name from the tz database
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use brightsky::RadarWeatherQueryBuilder;
-    ///
-    /// let query = RadarWeatherQueryBuilder::new()
-    ///     .with_lat_lon((52.0, 7.6))
-    ///     .with_tz("Europe/Berlin");
-    /// ```
     pub fn with_tz(mut self, tz: &str) -> Self {
         self.tz = Some(tz.to_string());
         self
     }
 
     /// Set the compression format for precipitation data (**recommended**).
-    ///
-    /// Different formats offer trade-offs between response size and processing complexity:
-    /// - `Compressed`: Smallest responses, best performance (recommended)
-    /// - `Bytes`: Medium size, no decompression needed
-    /// - `Plain`: Largest responses, easiest to process
-    ///
-    /// # Parameters
-    ///
-    /// * `format` - Compression format for precipitation data
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use brightsky::{RadarWeatherQueryBuilder, types::RadarCompressionFormat};
-    ///
-    /// let query = RadarWeatherQueryBuilder::new()
-    ///     .with_lat_lon((52.0, 7.6))
-    ///     .with_compression_format(RadarCompressionFormat::Compressed);  // Recommended
-    /// ```
     pub fn with_compression_format(mut self, format: RadarCompressionFormat) -> Self {
         self.compression_format = Some(format);
         self
     }
 
     /// Build and validate the query.
-    ///
-    /// Validates all parameters and returns the query ready for execution.
-    /// All parameters are optional for radar queries, but location parameters
-    /// are highly recommended to reduce response size.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(Self)` if validation passes, otherwise returns a `BlindSkyClientError`.
-    ///
-    /// # Errors
-    ///
-    /// - `InvalidLatitude`/`InvalidLongitude` - Coordinates out of valid range
-    /// - `ParseFloatError` - Invalid numeric values
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use brightsky::{RadarWeatherQueryBuilder, types::RadarCompressionFormat};
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let query = RadarWeatherQueryBuilder::new()
-    ///         .with_lat_lon((52.0, 7.6))
-    ///         .with_compression_format(RadarCompressionFormat::Compressed)
-    ///         .build()?;  // Validates parameters
-    ///     Ok(())
-    /// }
-    /// ```
-    pub fn build(self) -> Result<Self, BlindSkyClientError> {
+    pub fn build(self) -> Result<Self, BrightSkyError> {
         if let Some(lat_str) = &self.lat {
             lat_str
                 .parse::<f64>()
-                .map_err(BlindSkyClientError::ParseFloatError)
-                .and_then(|lat| -> Result<(), BlindSkyClientError> {
+                .map_err(BrightSkyError::ParseFloatError)
+                .and_then(|lat| -> Result<(), BrightSkyError> {
                     if !(-90.0..=90.0).contains(&lat) {
-                        Err(BlindSkyClientError::InvalidLongitude(lat))
+                        Err(BrightSkyError::InvalidLongitude(lat))
                     } else {
                         Ok(())
                     }
@@ -315,10 +188,10 @@ impl RadarWeatherQueryBuilder {
         if let Some(lon_str) = &self.lon {
             lon_str
                 .parse::<f64>()
-                .map_err(BlindSkyClientError::ParseFloatError)
-                .and_then(|lon| -> Result<(), BlindSkyClientError> {
+                .map_err(BrightSkyError::ParseFloatError)
+                .and_then(|lon| -> Result<(), BrightSkyError> {
                     if !(-180.0..=180.0).contains(&lon) {
-                        Err(BlindSkyClientError::InvalidLongitude(lon))
+                        Err(BrightSkyError::InvalidLongitude(lon))
                     } else {
                         Ok(())
                     }
@@ -329,12 +202,11 @@ impl RadarWeatherQueryBuilder {
     }
 }
 
-impl ToBrightSkyClientUrl for RadarWeatherQueryBuilder {
-    fn to_url(self, host: &str) -> Result<Url, BlindSkyClientError> {
-        let base = Url::parse(host).map_err(BlindSkyClientError::UrlParseError)?; // Dummy error
-        let mut url = base
-            .join("radar")
-            .map_err(BlindSkyClientError::UrlParseError)?; // Dummy error
+impl ToBrightSkyUrl for RadarWeatherQueryBuilder {
+    #[cfg(feature = "std")]
+    fn to_url(self, host: &str) -> Result<Url, BrightSkyError> {
+        let base = Url::parse(host)?;
+        let mut url = base.join("radar")?;
 
         let mut query = url.query_pairs_mut();
 
@@ -376,6 +248,58 @@ impl ToBrightSkyClientUrl for RadarWeatherQueryBuilder {
             query.append_pair("tz", &tz);
         }
         drop(query);
+        Ok(url)
+    }
+
+    fn to_url_string(self, host: &str) -> Result<String, BrightSkyError> {
+        #[cfg(not(feature = "std"))]
+        use alloc::vec::Vec;
+        #[cfg(feature = "std")]
+        use std::vec::Vec;
+
+        let mut url = format!("{}/radar", host.trim_end_matches('/'));
+        let mut params = Vec::new();
+
+        if let Some(lat) = self.lat {
+            params.push(format!("lat={}", lat));
+        }
+        if let Some(lon) = self.lon {
+            params.push(format!("lon={}", lon));
+        }
+        if let Some(bbox) = self.bbox {
+            let bbox_str = bbox
+                .iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<String>>()
+                .join(",");
+            params.push(format!("bbox={}", bbox_str));
+        }
+        if let Some(distance) = self.distance {
+            params.push(format!("distance={}", distance));
+        }
+        if let Some(date) = self.date {
+            params.push(format!("date={}", date));
+        }
+        if let Some(last_date) = self.last_date {
+            params.push(format!("last_date={}", last_date));
+        }
+        if let Some(format) = self.compression_format {
+            let format_str = match format {
+                RadarCompressionFormat::Compressed => "compressed",
+                RadarCompressionFormat::Bytes => "bytes",
+                RadarCompressionFormat::Plain => "plain",
+            };
+            params.push(format!("format={}", format_str));
+        }
+        if let Some(tz) = self.tz {
+            params.push(format!("tz={}", tz));
+        }
+
+        if !params.is_empty() {
+            url.push('?');
+            url.push_str(&params.join("&"));
+        }
+
         Ok(url)
     }
 }

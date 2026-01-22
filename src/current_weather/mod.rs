@@ -19,18 +19,17 @@
 //!
 //! ## Usage
 //!
-//! ```rust
-//! use brightsky::{BrightSkyClient, CurrentWeatherQueryBuilder, types::CurrentWeatherResponse};
+//! ```rust,no_run
+//! use brightsky::{CurrentWeatherQueryBuilder, ToBrightSkyUrl, BRIGHT_SKY_API, types::CurrentWeatherResponse};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let client = BrightSkyClient::new();
-//!
 //!     let query = CurrentWeatherQueryBuilder::new()
 //!         .with_lat_lon((52.52, 13.4))  // Berlin coordinates
 //!         .build()?;
 //!
-//!     let response = client.get::<CurrentWeatherResponse>(query).await?;
+//!     let url = query.to_url(BRIGHT_SKY_API)?;
+//!     let response: CurrentWeatherResponse = reqwest::get(url).await?.json().await?;
 //!
 //!     println!("Current temperature: {:?}°C", response.weather.temperature);
 //!     println!("Conditions: {:?}", response.weather.condition);

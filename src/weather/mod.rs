@@ -22,24 +22,23 @@
 //! ## Usage Examples
 //!
 //! ### Get historical weather data
-//! ```rust
-//! use brightsky::{BrightSkyClient, WeatherQueryBuilder, types::WeatherResponse};
+//! ```rust,no_run
+//! use brightsky::{WeatherQueryBuilder, ToBrightSkyUrl, BRIGHT_SKY_API, types::WeatherResponse};
 //! use chrono::NaiveDate;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let client = BrightSkyClient::new();
-//!
 //!     let query = WeatherQueryBuilder::new()
 //!         .with_date(NaiveDate::from_ymd_opt(2023, 7, 1).unwrap())
 //!         .with_last_date(NaiveDate::from_ymd_opt(2023, 7, 7).unwrap())
 //!         .with_lat_lon((52.52, 13.4))  // Berlin
 //!         .build()?;
 //!
-//!     let response = client.get::<WeatherResponse>(query).await?;
+//!     let url = query.to_url(BRIGHT_SKY_API)?;
+//!     let response: WeatherResponse = reqwest::get(url).await?.json().await?;
 //!
 //!     for record in response.weather {
-//!         println!("{}: {}°C, {}% humidity",
+//!         println!("{}: {}C, {}% humidity",
 //!             record.timestamp,
 //!             record.temperature.unwrap_or(0.0),
 //!             record.relative_humidity.unwrap_or(0)
@@ -51,22 +50,21 @@
 //! ```
 //!
 //! ### Get weather forecast
-//! ```rust
-//! use brightsky::{BrightSkyClient, WeatherQueryBuilder, types::WeatherResponse};
-//! use chrono::NaiveDate;
+//! ```rust,no_run
+//! use brightsky::{WeatherQueryBuilder, ToBrightSkyUrl, BRIGHT_SKY_API, types::WeatherResponse};
+//! use chrono::{NaiveDate, Utc};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let client = BrightSkyClient::new();
-//!
-//!     let tomorrow = chrono::Utc::now().date_naive() + chrono::Duration::days(1);
+//!     let tomorrow = Utc::now().date_naive() + chrono::Duration::days(1);
 //!
 //!     let query = WeatherQueryBuilder::new()
 //!         .with_date(tomorrow)
-//!         .with_dwd_station_id(vec!["01766"])  // Münster/Osnabrück
+//!         .with_dwd_station_id(vec!["01766"])  // Muenster/Osnabrueck
 //!         .build()?;
 //!
-//!     let response = client.get::<WeatherResponse>(query).await?;
+//!     let url = query.to_url(BRIGHT_SKY_API)?;
+//!     let response: WeatherResponse = reqwest::get(url).await?.json().await?;
 //!
 //!     for record in response.weather {
 //!         if let Some(prob) = record.precipitation_probability {

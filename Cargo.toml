@@ -1,31 +1,46 @@
 [package]
 name = "brightsky"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 authors = ["Florentin Eckl <ecklf@icloud.com>"]
-description = "A Rust client library for the Bright Sky weather API"
+description = "Type-safe query builders and response types for the Bright Sky weather API"
 homepage = "https://github.com/ecklf/brightsky-rs"
 repository = "https://github.com/ecklf/brightsky-rs"
 readme = "README.md"
 license-file = "LICENSE"
-keywords = ["weather", "api", "client", "brightsky", "meteorology"]
-categories = ["api-bindings", "web-programming", "science"]
+keywords = ["weather", "api", "brightsky", "dwd", "meteorology"]
+categories = ["api-bindings", "data-structures", "embedded", "no-std"]
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-reqwest = { version = "0.12", features = ["json"] }
-tokio = { version = "1", features = ["full"] }
-chrono = { version = "0.4", features = ["serde"] }
-thiserror = "2.0"
-flate2 = "1.1"
-url = "2"
-base64 = "0.22"
-anyhow = "1.0"
+# Core - always needed
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
+chrono = { version = "0.4", default-features = false, features = ["serde", "alloc"] }
+base64 = { version = "0.22", default-features = false, features = ["alloc"] }
+
+# std only
+url = { version = "2", optional = true }
+flate2 = { version = "1.1", optional = true }
+
+# Optional HTTP client integrations
+reqwest = { version = "0.13", features = ["json"], optional = true }
 
 [dev-dependencies]
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
 tokio-test = "0.4"
+reqwest = { version = "0.13", features = ["json"] }
 wiremock = "0.6"
 
 [features]
-default = []
+default = ["std"]
+std = [
+    "dep:url",
+    "dep:flate2",
+    "serde/std",
+    "serde_json/std",
+    "chrono/std",
+    "chrono/clock",
+]
+
+# HTTP client extension traits
+reqwest = ["std", "dep:reqwest"]
